@@ -26,11 +26,12 @@ mod fritz_xml;
 mod api;
 mod devices;
 
+use api::Token;
 pub use error::{Result, FritzError};
-pub use api::get_sid;
+pub use api::get_token;
 pub use fritz_xml::{DeviceStatsKind,DeviceStats};
 pub use devices::{AVMDevice,FritzDect2XX};
 
-pub fn list_devices(sid: &str) -> error::Result<Vec<devices::AVMDevice>> {
-    devices::AVMDevice::list(sid)
+pub fn list_devices(token: &Token) -> error::Result<Vec<devices::AVMDevice>> {
+    devices::AVMDevice::list(token)
 }

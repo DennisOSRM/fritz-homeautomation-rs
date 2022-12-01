@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
+use log::info;
 use regex::Regex;
 use reqwest::blocking::{get as GET, Client, Response};
-use log::info;
 
 use crate::error::{FritzError, Result};
 use crate::fritz_xml as xml;
@@ -30,25 +30,32 @@ fn request_response(password: &str, challenge: &str) -> String {
 
 const DEFAULT_SID: &str = "0000000000000000";
 
+pub struct Token {
+    sid: String,
+    host: String,
+}
+
 /// Requests a temporary token (session id = sid) from the fritz box using user
 /// name and password.
-pub fn get_sid(user: &str, password: &str) -> Result<String> {
-    let res: Response = GET("http://fritz.box/login_sid.lua")?
-        .error_for_status()
-        .map_err(|err| {
-            eprintln!("GET login_sid.lua for user {}", user);
-            err
-        })?;
+pub fn get_token(host: &str, user: &str, password: &str) -> Result<Token> {
+    let url = format!("http://{}/login_sid.lua", host);
+    let res: Response = GET(&url)?.error_for_status().map_err(|err| {
+        eprintln!("GET login_sid.lua for user {}", user);
+        err
+    })?;
 
     let xml = res.text()?;
     let info = xml::parse_session_info(&xml)?;
     if DEFAULT_SID != info.sid {
-        return Ok(info.sid);
+        return Ok(Token {
+            sid: info.sid,
+            host: host.to_string(),
+        });
     }
     let response = request_response(password, &info.challenge);
     let url = format!(
-        "http://fritz.box/login_sid.lua?username={}&response={}",
-        user, response
+        "http://{}/login_sid.lua?username={}&response={}",
+        host, user, response
     );
     let login: Response = GET(&url)?.error_for_status()?;
     let info = xml::parse_session_info(&login.text()?)?;
@@ -59,7 +66,10 @@ pub fn get_sid(user: &str, password: &str) -> Result<String> {
         ));
     }
 
-    Ok(info.sid)
+    Ok(Token {
+        sid: info.sid,
+        host: host.to_string(),
+    })
 }
 
 pub(crate) enum Commands {
@@ -75,7 +85,7 @@ pub(crate) enum Commands {
 }
 
 /// Sends raw HTTP requests to the fritz box.
-pub(crate) fn request(cmd: Commands, sid: &str, ain: Option<&str>) -> Result<String> {
+pub(crate) fn request(cmd: Commands, token: &Token, ain: Option<&str>) -> Result<String> {
     use Commands::*;
     let cmd = match cmd {
         GetDeviceListInfos => "getdevicelistinfos",
@@ -88,10 +98,10 @@ pub(crate) fn request(cmd: Commands, sid: &str, ain: Option<&str>) -> Result<Str
         SetSwitchOn => "setswitchon",
         SetSwitchToggle => "setswitchtoggle",
     };
-    let url = "http://fritz.box/webservices/homeautoswitch.lua";
+    let url = format!("http://{}/webservices/homeautoswitch.lua", token.host);
     let mut client = Client::new()
         .get(url)
-        .query(&[("switchcmd", cmd), ("sid", sid)]);
+        .query(&[("switchcmd", cmd), ("sid", &token.sid)]);
     if let Some(ain) = ain {
         client = client.query(&[("ain", ain)]);
     }
@@ -110,14 +120,14 @@ pub(crate) fn request(cmd: Commands, sid: &str, ain: Option<&str>) -> Result<Str
 // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 /// Requests & parses raw [`Device`]s.
-pub(crate) fn device_infos(sid: &str) -> Result<Vec<xml::Device>> {
-    let xml = request(Commands::GetDeviceListInfos, &sid, None)?;
+pub(crate) fn device_infos(token: &Token) -> Result<Vec<xml::Device>> {
+    let xml = request(Commands::GetDeviceListInfos, &token, None)?;
     xml::parse_device_infos(xml)
 }
 
 /// Requests & parses raw [`DeviceStats`]s.
-pub(crate) fn fetch_device_stats(ain: &str, sid: &str) -> Result<Vec<xml::DeviceStats>> {
-    let xml = request(Commands::GetBasicDeviceStats, sid, Some(ain))?;
+pub(crate) fn fetch_device_stats(ain: &str, token: &Token) -> Result<Vec<xml::DeviceStats>> {
+    let xml = request(Commands::GetBasicDeviceStats, &token, Some(ain))?;
     xml::parse_device_stats(xml)
 }
 

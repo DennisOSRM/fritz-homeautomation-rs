@@ -52,6 +52,7 @@ pub struct Device {
     pub simpleonoff: Option<SimpleOnOff>,
     pub powermeter: Option<PowerMeter>,
     pub temperature: Option<Temperature>,
+    pub alert: Option<Alert>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,6 +61,12 @@ pub struct Switch {
     pub lock: bool,
     pub devicelock: bool,
     pub mode: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Alert {
+    pub state: bool,
+    pub lastalertchgtimestamp: u32,
 }
 
 #[derive(Debug, Deserialize)]

@@ -1,6 +1,6 @@
-use crate::api;
+use crate::api::{self, Token};
 use crate::error::Result;
-use crate::fritz_xml as xml;
+use crate::fritz_xml::{self as xml, Alert};
 
 mod fritz_dect_2xx;
 pub use fritz_dect_2xx::FritzDect2XX;
@@ -34,8 +34,12 @@ impl std::fmt::Display for AVMDevice {
 }
 
 impl AVMDevice {
-    pub fn list(sid: &str) -> Result<Vec<AVMDevice>> {
-        let devices = api::device_infos(sid)?;
+    pub fn list(token: &Token) -> Result<Vec<AVMDevice>> {
+        let devices = api::device_infos(token)?;
+        // println!("got {} devices", devices.len());
+        // for d in &devices {
+        //     println!("a: {:?}", d);
+        // }
         let result: Vec<AVMDevice> = devices
             .into_iter()
             .map(|dev| match &dev {
@@ -43,7 +47,7 @@ impl AVMDevice {
                     identifier,
                     productname,
                     name,
-                    switch: Some(xml::Switch { state, .. }),
+                    // switch: Some(xml::Switch { state, .. }),
                     powermeter:
                         Some(xml::PowerMeter {
                             energy,
@@ -52,6 +56,12 @@ impl AVMDevice {
                             ..
                         }),
                     temperature: Some(xml::Temperature { celsius, .. }),
+                    alert:
+                        Some(xml::Alert {
+                            state,
+                            lastalertchgtimestamp,
+                            ..
+                        }),
                     ..
                 } if productname.starts_with("FRITZ!DECT 2") => {
                     AVMDevice::FritzDect2XX(FritzDect2XX {
@@ -102,6 +112,32 @@ impl AVMDevice {
         }
     }
 
+    pub fn is_alert(&self) -> bool {
+        match self {
+            AVMDevice::FritzDect2XX(_) => false,
+            // TODO
+            AVMDevice::Other(xml::Device { alert, .. }) => {
+                alert.as_ref().is_some() && alert.as_ref().unwrap().state
+            }
+        }
+    }
+
+    pub fn last_alert_change_epoch(&self) -> u32 {
+        match self {
+            AVMDevice::FritzDect2XX(_) => 0,
+            // TODO
+            AVMDevice::Other(xml::Device { alert, .. }) => {
+                alert
+                    .as_ref()
+                    .unwrap_or(&Alert {
+                        state: false,
+                        lastalertchgtimestamp: 0,
+                    })
+                    .lastalertchgtimestamp
+            }
+        }
+    }
+
     pub fn state(&self) -> &str {
         match self {
             AVMDevice::FritzDect2XX(FritzDect2XX { on: true, .. }) => "on",
@@ -110,22 +146,22 @@ impl AVMDevice {
         }
     }
 
-    pub fn fetch_device_stats(&self, sid: &str) -> Result<Vec<xml::DeviceStats>> {
-        api::fetch_device_stats(self.id(), sid)
+    pub fn fetch_device_stats(&self, token: &Token) -> Result<Vec<xml::DeviceStats>> {
+        api::fetch_device_stats(self.id(), token)
     }
 
-    pub fn turn_on(&mut self, sid: &str) -> Result<()> {
-        api::request(api::Commands::SetSwitchOn, sid, Some(self.id()))?;
+    pub fn turn_on(&mut self, token: &Token) -> Result<()> {
+        api::request(api::Commands::SetSwitchOn, token, Some(self.id()))?;
         Ok(())
     }
 
-    pub fn turn_off(&mut self, sid: &str) -> Result<()> {
-        api::request(api::Commands::SetSwitchOff, sid, Some(self.id()))?;
+    pub fn turn_off(&mut self, token: &Token) -> Result<()> {
+        api::request(api::Commands::SetSwitchOff, token, Some(self.id()))?;
         Ok(())
     }
 
-    pub fn toggle(&mut self, sid: &str) -> Result<()> {
-        api::request(api::Commands::SetSwitchToggle, sid, Some(self.id()))?;
+    pub fn toggle(&mut self, token: &Token) -> Result<()> {
+        api::request(api::Commands::SetSwitchToggle, token, Some(self.id()))?;
         Ok(())
     }
 }
